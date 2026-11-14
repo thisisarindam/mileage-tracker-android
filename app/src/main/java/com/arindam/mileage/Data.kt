@@ -1,6 +1,8 @@
 package com.arindam.mileage
 
 import androidx.room.*
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.Serializable
 import java.math.BigDecimal
@@ -40,7 +42,7 @@ data class Maintenance(
 // Preferences live in the same local SQLite transaction as histories so full restore is atomic.
 @Serializable
 @Entity(tableName = "preferences")
-data class Preferences(@PrimaryKey val id: Int = 1, val currency: String = "INR", val units: String = "metric")
+data class Preferences(@PrimaryKey val id: Int = 1, val currency: String = "INR", val units: String = "metric", @ColumnInfo(defaultValue = "1") val darkTheme: Boolean = true)
 
 fun decimal(value: String, name: String, positive: Boolean = false): BigDecimal {
     require(value.length in 1..100 && Regex("[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)").matches(value)) { "$name must be a finite decimal" }
@@ -89,7 +91,7 @@ interface RecordsDao {
     @Query("DELETE FROM fuel") suspend fun clearFuel()
     @Query("DELETE FROM maintenance") suspend fun clearMaintenance()
 }
-@Database(entities = [Fuel::class, Maintenance::class, Preferences::class], version = 1, exportSchema = true)
+@Database(entities = [Fuel::class, Maintenance::class, Preferences::class], version = 2, exportSchema = true)
 abstract class MileageDatabase : RoomDatabase() { abstract fun records(): RecordsDao }
 
 object Mileage {
@@ -109,5 +111,11 @@ object Mileage {
         val product = decimal(litres, "Litres").toDouble() * decimal(price, "Price").toDouble()
         require(product.isFinite()) { "Total is too large" }
         return BigDecimal(product).setScale(2, RoundingMode.HALF_UP).toPlainString()
+    }
+}
+
+val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE preferences ADD COLUMN darkTheme INTEGER NOT NULL DEFAULT 1")
     }
 }

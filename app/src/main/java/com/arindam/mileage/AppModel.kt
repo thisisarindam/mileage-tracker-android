@@ -3,6 +3,9 @@ package com.arindam.mileage
 import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.lifecycle.viewModelScope
 import androidx.room.Room
 import kotlinx.coroutines.Dispatchers
@@ -11,19 +14,25 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class MileageApp : Application() {
-    val store by lazy { Store(Room.databaseBuilder(this, MileageDatabase::class.java, "mileage.db").build()) }
+    val store by lazy { Store(Room.databaseBuilder(this, MileageDatabase::class.java, "mileage.db").addMigrations(MIGRATION_1_2).build()) }
 }
-data class ScreenData(val fuel: List<Fuel> = emptyList(), val maintenance: List<Maintenance> = emptyList(), val preferences: Preferences = Preferences(), val perFill: Map<String, Double?> = emptyMap(), val summary: String = "", val loaded: Boolean = false)
+data class ScreenData(
+    val fuel: List<Fuel> = emptyList(),
+    val maintenance: List<Maintenance> = emptyList(),
+    val preferences: Preferences = Preferences(),
+    val perFill: Map<String, Double?> = emptyMap(),
+    val insights: Insights = Insights(),
+    val loaded: Boolean = false
+)
 class AppModel(app: Application) : AndroidViewModel(app) {
+    companion object {
+        val Factory = viewModelFactory {
+            initializer { AppModel(checkNotNull(this[APPLICATION_KEY])) }
+        }
+    }
     private val store = (app as MileageApp).store
     val data = combine(store.dao.watchFuel(), store.dao.watchMaintenance(), store.dao.watchPreferences()) { f, m, p ->
-        val preferences = p ?: Preferences()
-        val summary = "${f.size} fill-ups • ${preferences.currency} ${Mileage.spent(f).setScale(2, java.math.RoundingMode.HALF_UP)} total\n" +
-            "This month: ${preferences.currency} ${Mileage.monthSpent(f, java.time.YearMonth.now()).setScale(2, java.math.RoundingMode.HALF_UP)}\n" +
-            "Lifetime mileage: ${formatMileage(Mileage.dashboardMileage(f))} km/L\n" +
-            "Analytics mileage (all litres): ${formatMileage(Mileage.analyticsMileage(f))} km/L\n" +
-            "Distance: ${Mileage.distance(f).toPlainString()} km"
-        ScreenData(Mileage.sorted(f).reversed(), m, preferences, Mileage.perFill(f), summary, true)
+        ScreenData(Mileage.sorted(f).reversed(), m, p ?: Preferences(), Mileage.perFill(f), Insights.from(f), true)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ScreenData())
     val busy = MutableStateFlow(false)
     val message = MutableStateFlow("")
@@ -48,7 +57,8 @@ class AppModel(app: Application) : AndroidViewModel(app) {
     }
     fun delete(f: Fuel) = task { store.dao.delete(f); message.value = "Fill-up deleted" }
     fun delete(m: Maintenance) = task { store.dao.delete(m); message.value = "Service deleted" }
-    fun currency(currency: String) = task { val p = Preferences(currency = currency); p.validate(); store.dao.setPreferences(p) }
+    fun currency(currency: String) = task { val p = (store.dao.preferences() ?: Preferences()).copy(currency = currency); p.validate(); store.dao.setPreferences(p); message.value = "Settings saved" }
+    fun theme(dark: Boolean) = task { store.dao.setPreferences((store.dao.preferences() ?: Preferences()).copy(darkTheme = dark)) }
     private fun read(uri: Uri): String {
         val resolver = getApplication<Application>().contentResolver
         return requireNotNull(resolver.openInputStream(uri)) { "Cannot open file" }.use { stream ->
