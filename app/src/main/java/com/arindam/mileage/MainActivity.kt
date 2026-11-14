@@ -8,7 +8,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -24,7 +27,12 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -47,6 +55,16 @@ fun MileageScreen(model: AppModel = viewModel(factory = AppModel.Factory)) {
     val message by model.message.collectAsStateWithLifecycle()
     val preview by model.importPreview.collectAsStateWithLifecycle()
     val restore by model.restorePreview.collectAsStateWithLifecycle()
+    val filters by model.historyFilter.collectAsStateWithLifecycle()
+    val filtered by model.filteredHistory.collectAsStateWithLifecycle()
+    var garage by rememberSaveable { mutableStateOf(false) }
+    var editorVehicleId by rememberSaveable { mutableStateOf(DEFAULT_VEHICLE_ID) }
+    var pickerVehicleId by rememberSaveable { mutableStateOf(DEFAULT_VEHICLE_ID) }
+    var showProgress by remember { mutableStateOf(false) }
+    LaunchedEffect(busy, data.loaded) {
+        showProgress = !data.loaded
+        if (busy && data.loaded) { delay(160); showProgress = true }
+    }
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var chooseEntry by rememberSaveable { mutableStateOf(false) }
     var editor by rememberSaveable { mutableStateOf<String?>(null) }
@@ -58,25 +76,27 @@ fun MileageScreen(model: AppModel = viewModel(factory = AppModel.Factory)) {
     var deletingService by remember { mutableStateOf<Maintenance?>(null) }
     var inputKind by rememberSaveable { mutableStateOf("fuel") }
     var outputKind by rememberSaveable { mutableStateOf("json") }
-    val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { model.open(it, inputKind) } }
+    val open = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { model.open(it, inputKind, pickerVehicleId) } }
     val jsonSave = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri -> uri?.let { model.export(it, "json") } }
-    val csvSave = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri -> uri?.let { model.export(it, outputKind) } }
+    val csvSave = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri -> uri?.let { model.export(it, outputKind, pickerVehicleId) } }
     val snackbar = remember { SnackbarHostState() }
     val saveableTabs = rememberSaveableStateHolder()
     val view = LocalView.current
+    val focus = LocalFocusManager.current
+    LaunchedEffect(message) { if (message.isNotEmpty()) { snackbar.showSnackbar(message); model.message.value = "" } }
+    BackHandler(enabled = tab != 0 && editor == null && !chooseEntry && !garage) { tab = 0 }
+    fun startFuel(f: Fuel? = null) { editorVehicleId = f?.vehicleId ?: data.activeVehicle.id; fuelJson = f?.let { Json.encodeToString(it) }; serviceJson = null; editor = "fuel"; chooseEntry = false }
+    fun startService(m: Maintenance? = null) { editorVehicleId = m?.vehicleId ?: data.activeVehicle.id; serviceJson = m?.let { Json.encodeToString(it) }; fuelJson = null; editor = "maintenance"; chooseEntry = false }
+    MileageTheme(data.preferences.darkTheme, motion = !data.preferences.reduceMotion) {
+        val lightSystemBars = MaterialTheme.colorScheme.background.luminance() > .45f
     SideEffect {
         (view.context as? Activity)?.window?.let { window ->
             WindowCompat.getInsetsController(window, view).apply {
-                isAppearanceLightStatusBars = !data.preferences.darkTheme
-                isAppearanceLightNavigationBars = !data.preferences.darkTheme
+                isAppearanceLightStatusBars = lightSystemBars
+                isAppearanceLightNavigationBars = lightSystemBars
             }
         }
     }
-    LaunchedEffect(message) { if (message.isNotEmpty()) { snackbar.showSnackbar(message); model.message.value = "" } }
-    BackHandler(enabled = tab != 0 && editor == null && !chooseEntry) { tab = 0 }
-    fun startFuel(f: Fuel? = null) { fuelJson = f?.let { Json.encodeToString(it) }; serviceJson = null; editor = "fuel"; chooseEntry = false }
-    fun startService(m: Maintenance? = null) { serviceJson = m?.let { Json.encodeToString(it) }; fuelJson = null; editor = "maintenance"; chooseEntry = false }
-    MileageTheme(data.preferences.darkTheme) {
         ReferenceBackground {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                 Scaffold(
@@ -106,7 +126,7 @@ fun MileageScreen(model: AppModel = viewModel(factory = AppModel.Factory)) {
                                 NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp) {
                                     val icons = listOf(Icons.Outlined.Home, Icons.Outlined.History, Icons.AutoMirrored.Outlined.ShowChart, Icons.Outlined.Settings)
                                     listOf("Home", "History", "Analytics", "Settings").forEachIndexed { i, name ->
-                                        NavigationBarItem(selected = tab == i, onClick = { tab = i }, icon = { Icon(icons[i], null) }, label = { Text(name) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = FuelBlue, selectedTextColor = MaterialTheme.colorScheme.onSurface, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant, unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant, indicatorColor = Color.Transparent))
+                                        NavigationBarItem(modifier = Modifier.semantics { contentDescription = "Navigate $name" }, selected = tab == i, onClick = { focus.clearFocus(); tab = i }, icon = { Icon(icons[i], null) }, label = { Text(name) }, colors = NavigationBarItemDefaults.colors(selectedIconColor = FuelBlue, selectedTextColor = MaterialTheme.colorScheme.onSurface, unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant, unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant, indicatorColor = Color.Transparent))
                                     }
                                 }
                             }
@@ -115,21 +135,34 @@ fun MileageScreen(model: AppModel = viewModel(factory = AppModel.Factory)) {
                     snackbarHost = { SnackbarHost(snackbar) }
                 ) { padding ->
                     Column(Modifier.padding(padding).fillMaxSize()) {
-                        if (busy || !data.loaded) LinearProgressIndicator(Modifier.fillMaxWidth())
-                        saveableTabs.SaveableStateProvider(tab) {
-                            when (tab) {
-                                0 -> DashboardScreen(data, { chooseEntry = true }, { tab = 1 })
-                                1 -> HistoryScreen(data, busy, { startFuel() }, { startService() }, { startFuel(it) }, { deletingFuel = it }, { startService(it) }, { deletingService = it })
-                                2 -> AnalyticsScreen(data)
-                                else -> SettingsScreen(data, busy, model::currency, model::theme,
-                                    open = { inputKind = it; open.launch(arrayOf("*/*")) },
-                                    export = { kind -> if (kind == "json") jsonSave.launch("mileage-tracker-backup.json") else { outputKind = kind; csvSave.launch(if (kind == "fuel") "fuel_entries_rows.csv" else "maintenance_logs_rows.csv") } })
+                        Box(Modifier.fillMaxWidth().height(4.dp)) { if (showProgress) LinearProgressIndicator(Modifier.fillMaxWidth()) }
+                        VehicleSwitcher(data, busy, model::selectVehicle, { garage = true })
+                        val motion = LocalMotionEnabled.current
+                        AnimatedContent(targetState = tab, modifier = Modifier.weight(1f).clipToBounds(), label = "screen transition", transitionSpec = {
+                            val direction = if (targetState > initialState) 1 else -1
+                            (fadeIn(tween(if (motion) 180 else 0)) + slideInHorizontally(tween(if (motion) 180 else 0)) { direction * it / 18 }) togetherWith
+                                (fadeOut(tween(if (motion) 100 else 0)) + slideOutHorizontally(tween(if (motion) 140 else 0)) { -direction * it / 24 })
+                        }) { screen ->
+                            saveableTabs.SaveableStateProvider(screen) {
+                                val inactive = screen != tab
+                                when (screen) {
+                                    0 -> DashboardScreen(data, { if (!inactive) chooseEntry = true }, { if (!inactive) { model.clearFilters(); tab = 1 } })
+                                    1 -> HistoryScreen(data, busy || inactive, { if (!inactive) startFuel() }, { if (!inactive) startService() }, { if (!inactive) startFuel(it) }, { if (!inactive) deletingFuel = it }, { if (!inactive) startService(it) }, { if (!inactive) deletingService = it }, filtered, filters, model::filter)
+                                    2 -> AnalyticsScreen(data)
+                                    else -> SettingsScreen(data, busy || inactive, { if (!inactive) model.currency(it) }, { if (!inactive) model.theme(it) },
+                                        open = { if (!inactive) { inputKind = it; pickerVehicleId = data.activeVehicle.id; open.launch(arrayOf("*/*")) } },
+                                        export = { kind -> if (!inactive) {
+                                            pickerVehicleId = data.activeVehicle.id
+                                            if (kind == "json") jsonSave.launch("mileage-tracker-backup.json") else { outputKind = kind; csvSave.launch(if (kind == "fuel") "fuel_entries_rows.csv" else "maintenance_logs_rows.csv") }
+                                        } }, reduceMotion = { if (!inactive) model.reduceMotion(it) }, garage = { if (!inactive) garage = true })
+                                }
                             }
                         }
                     }
                 }
             }
         }
+        if (garage) VehicleManager(data, busy, { garage = false }, model::selectVehicle, model::saveVehicle, model::deleteVehicle)
         if (chooseEntry) ModalBottomSheet(onDismissRequest = { chooseEntry = false }, containerColor = MaterialTheme.colorScheme.surface) {
             Column(Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 Text("Add Entry", style = MaterialTheme.typography.headlineSmall)
@@ -148,25 +181,29 @@ fun MileageScreen(model: AppModel = viewModel(factory = AppModel.Factory)) {
         }
         editor?.let { kind ->
             RecordEditor(kind, editingFuel, editingService, busy, data.preferences.currency,
-                cancel = { editor = null }, saveFuel = { model.save(it, editingFuel != null) { editor = null } }, saveService = { model.save(it, editingService != null) { editor = null } })
+                cancel = { editor = null }, saveFuel = { model.save(it, editingFuel != null) { editor = null } }, saveService = { model.save(it, editingService != null) { editor = null } },
+                vehicleId = editorVehicleId, vehicleName = data.vehicles.firstOrNull { it.vehicle.id == editorVehicleId }?.vehicle?.name ?: "Vehicle",
+                lastFuel = data.lastFuel?.takeIf { it.vehicleId == editorVehicleId })
         }
         if (deletingFuel != null || deletingService != null) AlertDialog(
             onDismissRequest = { if (!busy) { deletingFuel = null; deletingService = null } }, title = { Text("Delete record?") },
-            text = { Text("This cannot be undone. Save a JSON backup first if you need to keep it.") },
+            text = { DialogMotion(); Text("This cannot be undone. Save a JSON backup first if you need to keep it.") },
             confirmButton = { TextButton(enabled = !busy, onClick = { deletingFuel?.let(model::delete); deletingService?.let(model::delete); deletingFuel = null; deletingService = null }) { Text("Delete") } },
             dismissButton = { TextButton(enabled = !busy, onClick = { deletingFuel = null; deletingService = null }) { Text("Cancel") } }
         )
         preview?.let { p ->
             AlertDialog(onDismissRequest = { if (!busy) model.importPreview.value = null }, title = { Text("CSV import preview") }, text = {
+                DialogMotion()
                 LazyColumn(Modifier.heightIn(max = 360.dp)) {
-                    item { Text("${p.ready} ready • ${p.duplicates} already imported (including repeated IDs in this file) • ${p.errors.size} invalid\nOnly valid, new rows will be saved. Local edits will be preserved.") }
+                    item { Text("Vehicle: ${p.vehicleName}\n${p.ready} ready • ${p.duplicates} already imported (including repeated IDs in this file) • ${p.errors.size} invalid\nOnly valid, new rows will be saved. Local edits will be preserved.") }
                     items(p.errors, key = { it.line }) { Text("Row ${it.line}: ${it.reason}", Modifier.padding(top = 8.dp), color = MaterialTheme.colorScheme.error) }
                 }
             }, confirmButton = { TextButton(enabled = p.ready > 0 && !busy, onClick = model::confirmImport) { Text("Import ${p.ready} records") } }, dismissButton = { TextButton(enabled = !busy, onClick = { model.importPreview.value = null }) { Text("Cancel") } })
         }
         restore?.let { b ->
             AlertDialog(onDismissRequest = { if (!busy) model.restorePreview.value = null }, title = { Text("Replace all local data?") }, text = {
-                Text("Validated backup v${b.version}: ${b.fuel.size} fill-ups, ${b.maintenance.size} services, ${b.preferences.currency}, metric.\n\nThis replaces ${data.fuel.size} fill-ups, ${data.maintenance.size} services and your preferences. Empty histories in the backup will clear those histories.")
+                DialogMotion()
+                Text("Validated backup v${b.version}: ${b.vehicles.size} vehicles, ${b.fuel.size} fill-ups, ${b.maintenance.size} services, ${b.preferences.currency}, metric.\n\nThis replaces ${data.totalFuelCount} fill-ups, ${data.totalMaintenanceCount} services across all ${data.vehicles.size} vehicles, and your preferences. Empty histories in the backup will clear those histories.")
             }, confirmButton = { TextButton(enabled = !busy, onClick = model::confirmRestore) { Text("Replace and restore") } }, dismissButton = { TextButton(enabled = !busy, onClick = { model.restorePreview.value = null }) { Text("Cancel") } })
         }
     }

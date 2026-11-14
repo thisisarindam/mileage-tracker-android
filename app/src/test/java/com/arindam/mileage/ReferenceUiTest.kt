@@ -91,7 +91,7 @@ class ReferenceUiTest {
         compose.activityRule.scenario.recreate()
         compose.waitForIdle()
         compose.onAllNodesWithText("Settings", useUnmergedTree = true).assertCountEquals(2)
-        compose.onNode(isToggleable()).assertIsOff()
+        compose.onNodeWithContentDescription("Dark theme").assertIsOff()
         org.junit.Assert.assertFalse(runBlocking { store.dao.preferences()!!.darkTheme })
         org.junit.Assert.assertEquals(3, runBlocking { store.dao.fuel().size })
     }

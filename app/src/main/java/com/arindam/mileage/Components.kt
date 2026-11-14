@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -45,7 +46,7 @@ fun SectionHeading(title: String, subtitle: String? = null, action: (@Composable
 fun Metric(label: String, value: String, modifier: Modifier = Modifier, tint: Color = MaterialTheme.colorScheme.onSurface, centered: Boolean = false) {
     Column(modifier, horizontalAlignment = if (centered) Alignment.CenterHorizontally else Alignment.Start, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.headlineSmall, color = tint)
+        MotionValue(value) { Text(it, style = MaterialTheme.typography.headlineSmall, color = tint) }
     }
 }
 @Composable
@@ -72,7 +73,7 @@ fun StatRow(label: String, value: String, icon: ImageVector? = null, tint: Color
 fun EmptyHistory(title: String, detail: String, icon: ImageVector, action: () -> Unit, actionLabel: String = "Add Entry") {
     GlassCard {
         Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            IconTile(icon, FuelBlue, 56)
+            EmptyIllustration { IconTile(icon, FuelBlue, 56) }
             Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
             Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
             Button(onClick = action) { Text(actionLabel) }
@@ -81,18 +82,19 @@ fun EmptyHistory(title: String, detail: String, icon: ImageVector, action: () ->
 }
 /** Pure local rendering. Chart semantics expose exact summaries; samples only bound drawing cost. */
 @Composable
-fun TrendChart(values: List<Double>, label: String, tint: Color = MaterialTheme.colorScheme.onSurface) {
-    if (values.isEmpty()) {
+fun TrendChart(plot: ChartPlot, label: String, tint: Color = MaterialTheme.colorScheme.onSurface) {
+    if (plot.count == 0) {
         Box(Modifier.fillMaxWidth().height(154.dp), contentAlignment = Alignment.Center) {
             Text("Add at least two fill-ups to see this trend", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
         }
         return
     }
     val grid = MaterialTheme.colorScheme.outlineVariant
-    val average = values.average()
-    val sampled = if (values.size <= 120) values else (0..119).map { values[it * (values.lastIndex) / 119] }
-    Canvas(Modifier.fillMaxWidth().height(154.dp).semantics { contentDescription = "$label chart. Lowest ${formatMileage(values.min())}, highest ${formatMileage(values.max())}, average ${formatMileage(average)}" }) {
-        val low = values.min(); val high = values.max()
+    val average = plot.average!!
+    val sampled = plot.samples
+    val progress = revealProgress(plot)
+    Canvas(Modifier.fillMaxWidth().height(154.dp).semantics { contentDescription = "$label chart. Lowest ${formatMileage(plot.lowest)}, highest ${formatMileage(plot.highest)}, average ${formatMileage(average)}" }) {
+        val low = plot.lowest!!; val high = plot.highest!!
         val range = (high - low).takeIf { it > 0 } ?: maxOf(high * .1, 1.0)
         val bottom = low - range * .15
         val top = high + range * .15
@@ -104,11 +106,23 @@ fun TrendChart(values: List<Double>, label: String, tint: Color = MaterialTheme.
             val x = if (sampled.size == 1) size.width / 2 else size.width * i / sampled.lastIndex
             if (i == 0) path.moveTo(x, y(v)) else path.lineTo(x, y(v))
         }
-        drawPath(path, tint, style = Stroke(width = 3f))
+        clipRect(right = size.width * progress) { drawPath(path, tint, style = Stroke(width = 3f)) }
         if (sampled.size <= 30) sampled.forEachIndexed { i, v ->
             val x = if (sampled.size == 1) size.width / 2 else size.width * i / sampled.lastIndex
-            drawCircle(tint, 4.dp.toPx(), Offset(x, y(v)))
+            if (x <= size.width * progress) drawCircle(tint, 4.dp.toPx(), Offset(x, y(v)))
         }
     }
 }
 fun displayDate(date: String) = LocalDate.parse(date).format(DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.ENGLISH))
+
+@Composable
+fun TankSummaryCard(tanks: TankSummary) {
+    GlassCard {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Tank-cycle efficiency", style = MaterialTheme.typography.titleMedium)
+            Badge("${tanks.confirmedCycles} ${if (tanks.confirmedCycles == 1) "cycle" else "cycles"}", MileageGreen)
+        }
+        Text("${formatMileage(tanks.confirmedMileage)} km/L", style = MaterialTheme.typography.headlineSmall, color = MileageGreen)
+        Text(if (tanks.confirmedCycles == 0) "Mark full and partial fill-ups to start. A full tank establishes the baseline; the next full tank confirms the cycle." else "Confirmed distance ÷ all litres added after each full-tank baseline. Missed or unspecified entries break a cycle.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}

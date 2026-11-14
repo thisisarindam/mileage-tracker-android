@@ -58,7 +58,7 @@ class RulesTest {
     @Test fun backupStrictValidationAndExactRoundTrip() {
         val b = Backup(fuel = Imports.preview(resource("fuel_entries_rows.csv"), true, emptySet()).fuel, maintenance = emptyList(), preferences = Preferences())
         assertEquals(b, Backups.decode(Backups.encode(b)))
-        listOf(Backups.encode(b).replace("\"version\":2", "\"version\":999"), Backups.encode(b).replace("\"currency\":\"INR\",", ""), "{}", Backups.encode(b).replace("1000.123400", "NaN")).forEach { text -> assertThrows(Exception::class.java) { Backups.decode(text) } }
+        listOf(Backups.encode(b).replace("\"version\":3", "\"version\":999"), Backups.encode(b).replace("\"currency\":\"INR\",", ""), "{}", Backups.encode(b).replace("1000.123400", "NaN")).forEach { text -> assertThrows(Exception::class.java) { Backups.decode(text) } }
         assertThrows(IllegalArgumentException::class.java) { b.copy(fuel = b.fuel + b.fuel.first()).validate() }
     }
     private fun resource(name: String) = javaClass.classLoader!!.getResource(name)!!.readText()

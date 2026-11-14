@@ -13,7 +13,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [28], application = android.app.Application::class)
 class StoreTest {
     private lateinit var store: Store
-    @Before fun setup() { store = Store(Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), MileageDatabase::class.java).build()) }
+    @Before fun setup() { store = Store(Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext(), MileageDatabase::class.java).addCallback(DEFAULT_VEHICLE_CALLBACK).build()) }
     @After fun close() { store.db.close() }
     private fun preview() = Imports.preview(javaClass.classLoader!!.getResource("fuel_entries_rows.csv")!!.readText(), true, emptySet())
     @Test fun duplicateConfirmationCannotOverwriteLocalEdits() = runBlocking {
