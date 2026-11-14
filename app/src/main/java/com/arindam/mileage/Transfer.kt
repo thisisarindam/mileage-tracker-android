@@ -74,9 +74,9 @@ object Imports {
     fun exportMaintenance(rows: List<Maintenance>) = Csv.write(listOf(maintenanceHeaders) + rows.map { listOf(it.sourceId ?: it.id, "", it.date, it.serviceType, it.odometer, it.totalCost, it.notes, it.createdAt) })
 }
 @Serializable
-data class Backup(val format: String = "mileage-tracker", val version: Int = 1, val fuel: List<Fuel>, val maintenance: List<Maintenance>, val preferences: Preferences) {
+data class Backup(val format: String = "mileage-tracker", val version: Int = 2, val fuel: List<Fuel>, val maintenance: List<Maintenance>, val preferences: Preferences) {
     fun validate() {
-        require(format == "mileage-tracker" && version == 1) { "Unsupported backup format/version" }
+        require(format == "mileage-tracker" && version in 1..2) { "Unsupported backup format/version" }
         fuel.forEach { it.validate() }; maintenance.forEach { it.validate() }; preferences.validate()
         fun unique(ids: List<String>, sources: List<String>) { require(ids.distinct().size == ids.size && sources.distinct().size == sources.size) { "Duplicate record or source IDs" } }
         unique(fuel.map { it.id }, fuel.mapNotNull { it.sourceId })
@@ -85,14 +85,15 @@ data class Backup(val format: String = "mileage-tracker", val version: Int = 1, 
 }
 object Backups {
     private val json = Json { encodeDefaults = true; ignoreUnknownKeys = false; coerceInputValues = false }
-    fun encode(backup: Backup): String { backup.validate(); return json.encodeToString(backup) }
+    fun encode(backup: Backup): String { backup.validate(); return json.encodeToString(backup.copy(version = 2)) }
     fun decode(text: String): Backup {
         val root = json.parseToJsonElement(text).jsonObject
         fun fields(value: JsonObject, required: Set<String>) { require(value.keys == required) { "Backup has missing or unknown fields" } }
         fields(root, setOf("format", "version", "fuel", "maintenance", "preferences"))
         root.getValue("fuel").jsonArray.forEach { fields(it.jsonObject, setOf("id", "sourceId", "date", "odometer", "totalCost", "pricePerLitre", "litres", "station", "notes", "createdAt")) }
         root.getValue("maintenance").jsonArray.forEach { fields(it.jsonObject, setOf("id", "sourceId", "date", "serviceType", "odometer", "totalCost", "notes", "createdAt")) }
-        fields(root.getValue("preferences").jsonObject, setOf("id", "currency", "units"))
+        val preferenceFields = setOf("id", "currency", "units") + if (root.getValue("version").jsonPrimitive.int == 1) emptySet() else setOf("darkTheme")
+        fields(root.getValue("preferences").jsonObject, preferenceFields)
         return json.decodeFromString<Backup>(text).also { it.validate() }
     }
 }

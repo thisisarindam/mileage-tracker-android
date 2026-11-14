@@ -34,3 +34,10 @@ jobs:
         with:
           name: unit-test-results
           path: app/build/reports/tests/testDebugUnitTest/
+      - name: Upload synthetic UI previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-previews
+          path: app/build/reports/ui/*.png
+          if-no-files-found: ignore
