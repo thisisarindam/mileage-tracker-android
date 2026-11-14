@@ -1,0 +1,2 @@
+id,user_id,service_date,service_type,odometer_km,total_cost,notes,created_at
+synthetic-service-1,unused,2025-01-03,"Oil, filter",1050,450.1250,"Mechanic said ""done""",2025-01-04T00:00:00Z
