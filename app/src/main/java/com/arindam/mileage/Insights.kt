@@ -30,6 +30,9 @@ data class Insights(
     val mostUsedStation: String = "Unknown",
     val stationEfficiency: List<StationEfficiency> = emptyList()
 ) {
+    val pricePlot = ChartPlot.from(priceTrend)
+    val costPlot = ChartPlot.from(runningCost)
+    val efficiencyPlot = ChartPlot.from(efficiencyTrend)
     companion object {
         private fun stats(rows: List<Fuel>) = PeriodStats(
             Mileage.spent(rows), Mileage.distance(rows), rows.sumOf { it.litres.toBigDecimal() },
@@ -73,3 +76,14 @@ fun quotient(a: BigDecimal, b: BigDecimal): Double? = if (a.signum() > 0 && b.si
 fun currencySymbol(currency: String) = when (currency) { "INR" -> "₹"; "USD" -> "$"; "EUR" -> "€"; "GBP" -> "£"; else -> currency }
 fun money(amount: BigDecimal, currency: String, decimals: Int = 0) = currencySymbol(currency) + String.format(Locale.ENGLISH, "%,.${decimals}f", amount)
 fun shortNumber(amount: BigDecimal) = String.format(Locale.ENGLISH, "%,.0f", amount)
+
+/** Fully prepared on the calculation dispatcher; drawing never scans a large history. */
+data class ChartPlot(val samples: List<Double> = emptyList(), val lowest: Double? = null, val highest: Double? = null, val average: Double? = null, val count: Int = 0) {
+    companion object {
+        fun from(values: List<Double>): ChartPlot {
+            if (values.isEmpty()) return ChartPlot()
+            val samples = if (values.size <= 120) values.toList() else (0..119).map { values[it * values.lastIndex / 119] }
+            return ChartPlot(samples, values.min(), values.max(), values.average(), values.size)
+        }
+    }
+}

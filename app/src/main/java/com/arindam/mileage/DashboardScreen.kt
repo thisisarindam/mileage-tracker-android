@@ -26,7 +26,8 @@ fun DashboardScreen(data: ScreenData, add: () -> Unit, viewAll: () -> Unit) {
     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item("monthly-spent") { QuickStat("Monthly Fuel Spent", money(insights.current.spent, currency), Icons.Outlined.Payments) }
         item("average-distance") { QuickStat("Avg Monthly Dist", "${shortNumber(insights.averageMonthlyDistance.toBigDecimal())} km", Icons.Outlined.Route) }
-        item("average-efficiency") { QuickStat("Avg Efficiency", "${formatMileage(insights.dashboardMileage)} km/L", Icons.Outlined.Speed, MileageGreen) }
+        item("average-efficiency") { QuickStat("Original Avg Efficiency", "${formatMileage(insights.dashboardMileage)} km/L", Icons.Outlined.Speed, MileageGreen) }
+        item("tank-summary") { TankSummaryCard(data.tanks) }
         item("analytics-heading") { SectionHeading("Analytics", "Swipe to see detailed trends") }
         item("analytics-carousel") { TrendCarousel(insights, currency) }
         item("recent-heading") {
@@ -38,7 +39,7 @@ fun DashboardScreen(data: ScreenData, add: () -> Unit, viewAll: () -> Unit) {
             EmptyHistory("Your journey starts here", "Log a fill-up or import your fuel history from Settings.", Icons.Outlined.LocalGasStation, add)
         }
         items(data.fuel.take(10), key = { "recent-${it.id}" }) { fuel ->
-            FuelRecordCard(fuel, currency, data.perFill[fuel.id], onOpen = viewAll)
+            FuelRecordCard(fuel, currency, data.perFill[fuel.id], onOpen = viewAll, reading = data.tanks.readings[fuel.id])
         }
     }
 }
@@ -58,7 +59,7 @@ fun TrendCarousel(insights: Insights, currency: String) {
     val titles = listOf("Fuel Price Trend", "Running Cost", "Efficiency Trend")
     Column {
         HorizontalPager(state = pager, key = { it }, pageSpacing = 16.dp, modifier = Modifier.fillMaxWidth()) { page ->
-            val values = when (page) { 0 -> insights.priceTrend; 1 -> insights.runningCost; else -> insights.efficiencyTrend }
+            val plot = when (page) { 0 -> insights.pricePlot; 1 -> insights.costPlot; else -> insights.efficiencyPlot }
             val tint = if (page == 2) MileageGreen else MaterialTheme.colorScheme.onSurface
             fun value(v: Double?) = if (v == null) "—" else when (page) {
                 0 -> "${currencySymbol(currency)}${formatMileage(v)}"
@@ -68,16 +69,16 @@ fun TrendCarousel(insights: Insights, currency: String) {
             GlassCard {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(titles[page], Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                    Badge("Avg: ${value(values.takeIf { it.isNotEmpty() }?.average())}", tint)
+                    Badge("Avg: ${value(plot.average)}", tint)
                 }
-                TrendChart(values, titles[page], tint)
+                TrendChart(plot, titles[page], tint)
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Row(Modifier.fillMaxWidth()) {
                     listOf("↓ Lowest", "↑ Highest", "— Average").forEachIndexed { i, label ->
                         Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             val labelTint = when (i) { 0 -> if (page == 2) DangerRed else MileageGreen; 1 -> if (page == 2) MileageGreen else DangerRed; else -> MaterialTheme.colorScheme.onSurfaceVariant }
                             Text(label, color = labelTint, style = MaterialTheme.typography.labelSmall)
-                            val v = if (values.isEmpty()) null else when (i) { 0 -> values.min(); 1 -> values.max(); else -> values.average() }
+                            val v = when (i) { 0 -> plot.lowest; 1 -> plot.highest; else -> plot.average }
                             Text(value(v), style = MaterialTheme.typography.labelLarge)
                         }
                     }

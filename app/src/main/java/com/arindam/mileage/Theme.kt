@@ -7,11 +7,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.font.*
 
@@ -51,12 +54,22 @@ private val Typography = Typography().let { t ->
     )
 }
 @Composable
-fun MileageTheme(dark: Boolean = true, content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = if (dark) Dark else Light, typography = Typography, shapes = Shapes(extraSmall = RoundedCornerShape(12.dp), small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(12.dp), large = RoundedCornerShape(20.dp), extraLarge = RoundedCornerShape(24.dp)), content = content)
+fun MileageTheme(dark: Boolean = true, motion: Boolean = true, content: @Composable () -> Unit) {
+    val enabled = motion && systemMotionEnabled()
+    val target = if (dark) Dark else Light
+    @Composable fun color(value: Color): Color = animateColorAsState(value, tween(if (enabled) 180 else 0), label = "theme color").value
+    val scheme = target.copy(
+        background = color(target.background), onBackground = color(target.onBackground),
+        surface = color(target.surface), onSurface = color(target.onSurface), surfaceVariant = color(target.surfaceVariant),
+        onSurfaceVariant = color(target.onSurfaceVariant), outline = color(target.outline), outlineVariant = color(target.outlineVariant)
+    )
+    CompositionLocalProvider(LocalMotionEnabled provides enabled) {
+        MaterialTheme(colorScheme = scheme, typography = Typography, shapes = Shapes(extraSmall = RoundedCornerShape(12.dp), small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(12.dp), large = RoundedCornerShape(20.dp), extraLarge = RoundedCornerShape(24.dp)), content = content)
+    }
 }
 @Composable
 fun ReferenceBackground(content: @Composable BoxScope.() -> Unit) {
-    val dark = MaterialTheme.colorScheme.background == Dark.background
+    val dark = MaterialTheme.colorScheme.background.luminance() < .2f
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
         .background(Brush.radialGradient(listOf(FuelBlue.copy(alpha = if (dark) .12f else .07f), Color.Transparent), center = Offset(0f, 0f), radius = 1200f))
         .background(Brush.linearGradient(listOf(Color.Transparent, MileageGreen.copy(alpha = if (dark) .06f else .05f)))), content = content)

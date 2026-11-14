@@ -52,6 +52,7 @@ fun AnalyticsScreen(data: ScreenData) {
                 }
             }
         }
+        item("tank-summary") { TankSummaryCard(data.tanks) }
         item("comparison-title") { SectionHeading("Monthly Comparison") }
         item("comparison") {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
