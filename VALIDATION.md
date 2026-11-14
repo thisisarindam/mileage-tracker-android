@@ -9,40 +9,21 @@
 - `aapt dump permissions`: no `INTERNET`, broad storage, or account permissions. Only the AndroidX signature-protected internal receiver permission is present.
 - Packaged manifest inspection: `allowBackup=false`, `fullBackupContent=false`, data-extraction rules exclude cloud and device-transfer data, minSdk 26 / targetSdk 35. No Supabase SDK, remote assets, WebView or Capacitor code.
 - `lintDebug`: **no issues found**, with the temporary local test-runtime exclusion described below. No app lint checks were disabled.
-- `git diff --check`: passed. No commits, pushes, merges, or original-web-repository modifications were made.
+- Source is pushed to `codex/mileage-tracker-native` in draft PR #1. Nothing has been merged into `main`; the reference web repository is unchanged. The generated Windows Gradle launcher retains its standard CRLF endings.
 
-## Test outcomes
+## Latest test outcomes after environment publication
 
-All 13 unit tests compile. The seven tests in `RulesTest` **executed and passed**:
+The standard command `./gradlew testDebugUnitTest assembleDebug` **passed** on 14 November 2026 after restoring the published environment. There were **13 executed tests, zero failures, zero errors and zero skipped tests**. No dependency exclusions, filtered suites, or test workarounds were used for this run.
 
-1. Original dashboard vs analytics denominators, per-fill mileage and web form rounding edge cases.
-2. Equal odometers, zero litres and monthly spending.
-3. CSV BOM/CRLF, commas, quotes, embedded newlines and physical row numbers.
-4. Malformed CSV rejection.
-5. Reordered headers, invalid rows, source duplicate detection and exact imported decimal/timestamp preservation.
-6. Synthetic fuel and maintenance CSV import/export round trips.
-7. JSON exact round trip and rejection of invalid versions, missing fields, bad numeric values and duplicate IDs.
+- **RulesTest: 7 passed** — both original mileage denominators, per-fill rules, manual-cost rounding edge cases, zero/equal odometers, monthly spending, BOM/CRLF/quoted/multiline CSV, malformed CSV, reordered headers, invalid rows, source duplicate detection, exact decimal/timestamp preservation, synthetic fuel/maintenance export round trips, and strict JSON round trip/validation.
+- **StoreTest: 5 passed** — fuel and maintenance duplicate imports preserve local edits, including stale previews; full Room backup/restore retains preferences and source IDs; invalid backup leaves all stored data intact; an injected SQLite insertion failure rolls back the restore transaction.
+- **OfflineStartupTest: 1 passed** — MainActivity starts under Robolectric and the manifest has no Internet permission or automatic backup.
 
-The full normal command `./gradlew testDebugUnitTest assembleDebug lintDebug` **did not pass**: the cloud proxy rejected a Maven Central redirect for `org.robolectric:nativeruntime-dist-compat:1.0.16` to `gcp.mirrors.maven.org` (HTTP 403).
+The original implementation run could execute only seven pure JVM tests because Maven redirected Robolectric runtime downloads to a domain outside the cloud allowlist. That prerequisite is now resolved: the full framework/native artifacts downloaded and all enabled tests ran normally. The previous subset-only result is superseded by this full run.
 
-To execute the independent pure JVM tests, a temporary **outside-repository** Gradle init script excluded that unused native test-runtime artifact, and selected only `com.arindam.mileage.RulesTest`. This command passed all seven tests. It did not change production code, assertions, dependency declarations, or the committed workflow.
+Generated current-run reports: `app/build/reports/tests/testDebugUnitTest/index.html` and `app/build/test-results/testDebugUnitTest/`. These are ignored build outputs.
 
-A subsequent diagnostic run with that same local exclusion attempted all 13 tests and lint using `--continue`. Seven tests passed; **six failed during Robolectric setup before their test bodies**, because the Android framework test artifact (`android-all-instrumented:9-robolectric-4913185-2-i7`) could not be downloaded through the proxy (HTTP 403). An initial read-only home-cache issue was fixed with a writable test-JVM cache location, and the retry confirmed the remaining network blocker. Lint completed with no issues. Therefore these six checks remain **unverified**, rather than passed:
-
-- Fuel duplicate import and preservation of local edits through Room (including stale previews).
-- Maintenance duplicate import and preservation of local edits through Room.
-- Full database backup/restore including preferences and source IDs.
-- Invalid backup leaves existing database records and preferences intact.
-- An actual SQLite insertion failure rolls back the entire restore transaction.
-- MainActivity startup and manifest checks under Robolectric.
-
-These tests remain enabled in the repository and GitHub Actions. No test exclusions or network workarounds were added to the project. Current full diagnostic reports are under `app/build/reports/tests/testDebugUnitTest/`; lint reports are under `app/build/reports/lint-results-debug.*` (generated/ignored).
-
-## Environment follow-up
-
-The environment draft saves an additive custom network destination, `gcp.mirrors.maven.org`, preserving package-manager presets. Review and save it in environment settings, then retry the full suite. Publish the environment to retain the prepared snapshot/configuration. The draft also saves tested Android activation/build instructions; saving the draft does not itself apply the network policy or publish anything.
-
-In this cloud instance:
+## Cloud development commands
 
 ```sh
 source /workspace/tooling/activate-mileage-android.sh
@@ -50,8 +31,14 @@ cd /workspace/mileage-tracker-android
 ./gradlew testDebugUnitTest assembleDebug lintDebug
 ```
 
-The snapshot has verified JDK/SDK tooling, proxy CA trust, Gradle dependencies and writable cache configuration outside the repository. TLS and distribution/artifact verification remain enabled. No credentials or personal records were requested, used as fixtures, bundled or added to source.
+The published snapshot retains the verified JDK/SDK tooling, proxy CA trust, Gradle dependencies and writable test-cache configuration outside the repository. The cache configuration only redirects test-JVM cache storage; it does not disable any tests or dependencies. TLS and artifact verification remain enabled. No personal records or Supabase credentials were used as fixtures or bundled.
+
+## GitHub review and CI
+
+Draft PR: https://github.com/thisisarindam/mileage-tracker-android/pull/1
+
+The push workflow runs unit tests and builds a debug APK. Follow the PR checks or the repository Actions tab for the latest remote result and the `mileage-tracker-debug` artifact after a successful run. The first remote run revealed that the setup action's default `tools` package has been removed from Google's SDK repository; the workflow now explicitly requests `platform-tools` and installs Platform 35 / Build Tools 35.0.0.
 
 ## Not verified here
 
-No physical Nothing Phone 2a or Android emulator was available. Installation, first-launch airplane-mode UI behavior, Android document-provider interactions, rotation/keyboard behavior, and scrolling performance on the phone require the README acceptance checklist. The GitHub workflow was authored but has not been pushed or remotely executed. APK assembly and source-level logic tests do not establish those device/CI outcomes.
+No physical Nothing Phone 2a or Android emulator was available. Installation, first-launch airplane-mode UI behavior, Android document-provider interactions, rotation/keyboard behavior, and scrolling performance on the phone require the README acceptance checklist. GitHub checks report remote CI outcomes separately. APK assembly and Robolectric tests do not establish physical-device behavior.
